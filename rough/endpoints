@@ -1,0 +1,130 @@
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    name = request.form.get('name')
+    file = request.files['file']
+    if file and name:
+        # Extract the file name and extension
+        file_name = file.filename
+
+        # Record the upload time
+        upload_time = datetime.now().strftime('%d-%m-%Y')
+        # Read the Excel file using pandas
+        df = pd.read_excel(file)
+
+        # Create a dynamic MongoDB collection with name, filename, and upload time
+        collection_name = f'{name}_{file_name}_{upload_time}'  # Combine name, filename, and upload time
+        collection = db[collection_name]
+        collection.insert_many(df.to_dict('records'))
+
+    #     return f'Successfully uploaded {file_name} as the "{collection_name}" collection in MongoDB at {upload_time}!'
+    # else:
+    #     return 'No file uploaded or name provided.'
+
+        return jsonify(message=f'Successfully uploaded {file_name} as the "{collection_name}" collection in MongoDB at {upload_time}!')
+    else:
+        return jsonify(error='No file uploaded or name provided.'), 400
+
+
+
+@app.route('/excels', methods=['GET'])
+def get_excels():
+    # Get a list of all collections in the database
+    collection_names = db.list_collection_names()
+
+    # Filter the collection names to only include Excel files
+    excel_collections = [name for name in collection_names if 'xlsx' in name]
+
+    return {'excels': excel_collections}
+
+
+@app.route('/excel/<name>', methods=['GET'])
+def get_single_excel(name):
+    # Search for the specific Excel file collection
+    collection_name = quote(name)
+    collection = db[collection_name]
+
+    # Retrieve the documents from the collection
+    documents = collection.find()
+
+    df = pd.DataFrame(documents)
+    
+    # Count values in each column
+    column_counts = {}
+    for column in df.columns:
+        value_counts = df[column].value_counts().to_dict()
+        
+        # Convert keys to a hashable type
+        cleaned_value_counts = {}
+        for key, value in value_counts.items():
+            cleaned_key = str(key) if not isinstance(key, datetime) else key.strftime('%Y-%m-%d %H:%M:%S')
+            cleaned_value_counts[cleaned_key] = value
+        
+        column_counts[column] = cleaned_value_counts
+    
+    # Store the column counts if needed
+    # You can save the column_counts dictionary to a file or a database here
+    print(type(column_counts))
+    # Parse the JSON data
+    
+
+# Extract key-value pairs where the value is greater than 1
+    result = {}
+    for key, value in column_counts.items():
+        if isinstance(value, dict):
+            result[key] = {k: v for k, v in value.items() if v > 1}
+        elif value > 1:
+            result[key] = value
+    return result
+
+
+
+@app.route('/columns/<file_name>', methods=['GET'])
+def get_column_data(file_name):
+    # Set the collection name based on the file name
+    collection_name = file_name
+
+    # Retrieve the documents from the collection
+    documents = db[collection_name].find()
+
+    column_data = {}
+    for document in documents:
+        for key, value in document.items():
+            if key != '_id':
+                if key not in column_data:
+                    column_data[key] = {}
+                if value not in column_data[key]:
+                    column_data[key][value] = 0
+                column_data[key][value] += 1
+
+    return jsonify({'columns': list(column_data.keys()), 'data': column_data})
+
+
+
+
+
+
+# @app.route('/columns/<file_name>', methods=['GET'])
+# def get_column_data(file_name):
+#     # Set the collection name based on the file name
+#     collection_name = file_name
+
+#     # Retrieve the documents from the collection
+#     documents = db[collection_name].find()
+
+#     column_data = {}
+#     for document in documents:
+#         for key, value in document.items():
+#             if key != '_id':
+#                 if key not in column_data:
+#                     column_data[key] = {}
+#                 if value not in column_data[key]:
+#                     column_data[key][value] = 0
+#                 column_data[key][value] += 1
+
+#     # Convert the column data into a list of tuples and sort by keys
+#     sorted_column_data = sorted(column_data.items(), key=lambda x: x[0])
+
+#     # Convert the sorted column data list back into a dictionary
+#     sorted_column_data = {key: value for key, value in sorted_column_data}
+
+#     return jsonify({'columns': list(sorted_column_data.keys()), 'data': sorted_column_data})
